@@ -3,6 +3,7 @@ package loader
 import (
 	"fmt"
 
+	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/sonhathai/ebpfview/internal/feature"
 )
@@ -131,6 +132,44 @@ func (m *Manager) AttachFentry(h *Handle, progName string) error {
 	m.mu.Unlock()
 
 	m.logger.Info("fentry attached", "handle", h.ID, "program", progName)
+	return nil
+}
+
+// AttachTCXIngress attaches a TC classifier program to the ingress path of
+// the given network interface using TCX (kernel 6.6+).
+func (m *Manager) AttachTCXIngress(h *Handle, progName string, ifindex int) error {
+	return m.attachTCX(h, progName, ifindex, ebpf.AttachTCXIngress, "ingress")
+}
+
+// AttachTCXEgress attaches a TC classifier program to the egress path of
+// the given network interface using TCX (kernel 6.6+).
+func (m *Manager) AttachTCXEgress(h *Handle, progName string, ifindex int) error {
+	return m.attachTCX(h, progName, ifindex, ebpf.AttachTCXEgress, "egress")
+}
+
+func (m *Manager) attachTCX(h *Handle, progName string, ifindex int, attachType ebpf.AttachType, direction string) error {
+	prog := h.Collection.Programs[progName]
+	if prog == nil {
+		return fmt.Errorf("loader.AttachTCX: %w: %s", ErrProgNotFound, progName)
+	}
+
+	l, err := link.AttachTCX(link.TCXOptions{
+		Program:   prog,
+		Interface: ifindex,
+		Attach:    attachType,
+	})
+	if err != nil {
+		h.Status = StatusError
+		h.Error = err
+		return fmt.Errorf("loader.AttachTCX: %s on ifindex %d: %w", direction, ifindex, err)
+	}
+
+	m.mu.Lock()
+	h.Links = append(h.Links, l)
+	h.Status = StatusAttached
+	m.mu.Unlock()
+
+	m.logger.Info("TCX attached", "handle", h.ID, "program", progName, "ifindex", ifindex, "direction", direction)
 	return nil
 }
 
