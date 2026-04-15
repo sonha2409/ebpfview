@@ -1,0 +1,67 @@
+# Lima VM config for ebpfview eBPF development.
+# Usage:
+#   limactl create --name=ebpfview lima-ebpfview.yaml
+#   limactl start ebpfview
+#   limactl shell ebpfview
+
+# Ubuntu 24.04 ships kernel 6.8 — supports TCX, ring buffers, BTF, batch ops.
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
+    arch: "x86_64"
+
+cpus: 4
+memory: "4GiB"
+disk: "20GiB"
+
+# Mount the project directory writable so we can build inside the VM.
+mounts:
+  - location: "/Users/sonhathai/bpftop"
+    writable: true
+
+# Install BPF toolchain + Go on first boot.
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+
+      export DEBIAN_FRONTEND=noninteractive
+
+      apt-get update -qq
+      # Note: bpftool is bundled in linux-tools-$(uname -r), not a separate package.
+      apt-get install -y -qq \
+        clang \
+        llvm \
+        libbpf-dev \
+        linux-headers-$(uname -r) \
+        linux-tools-common \
+        linux-tools-$(uname -r) \
+        gcc \
+        make \
+        git \
+        curl \
+        pkg-config
+
+      # Install Go 1.24.5 to match the host.
+      GO_VERSION="1.24.5"
+      ARCH=$(dpkg --print-architecture)
+      curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
+        | tar -C /usr/local -xz
+
+      # Make Go available system-wide.
+      cat > /etc/profile.d/golang.sh <<'GOEOF'
+      export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
+      export GOPATH="$HOME/go"
+      GOEOF
+      chmod +x /etc/profile.d/golang.sh
+
+      # Generate vmlinux.h for BPF CO-RE development.
+      bpftool btf dump file /sys/kernel/btf/vmlinux format c \
+        > /usr/include/vmlinux.h || true
+
+      echo "=== ebpfview dev environment ready ==="
+      uname -r
+      clang --version | head -1
+      /usr/local/go/bin/go version

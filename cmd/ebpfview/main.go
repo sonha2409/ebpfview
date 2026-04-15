@@ -39,16 +39,7 @@ to target applications.`,
 	return root
 }
 
-func newFlowsCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "flows",
-		Short: "Stream real-time network flow data",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("ebpfview flows: not yet implemented")
-			return nil
-		},
-	}
-}
+// newFlowsCmd is defined in flows_run.go (linux) or flows_stub.go (other).
 
 func newTraceCmd() *cobra.Command {
 	return &cobra.Command{
