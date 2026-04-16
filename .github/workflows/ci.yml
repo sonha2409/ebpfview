@@ -17,8 +17,20 @@ jobs:
         with:
           go-version: "1.22"
 
-      - name: Install clang
-        run: sudo apt-get update && sudo apt-get install -y clang llvm
+      - name: Install BPF toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm linux-tools-common linux-tools-$(uname -r) || true
+          # Fallback: if linux-tools not available, use bpftool from PATH or generate minimal vmlinux.h
+          if command -v bpftool &>/dev/null && [ -f /sys/kernel/btf/vmlinux ]; then
+            bpftool btf dump file /sys/kernel/btf/vmlinux format c > bpf/c/vmlinux.h
+          else
+            # Use a pre-generated vmlinux.h from libbpf/btf archive for CI
+            sudo apt-get install -y libbpf-dev || true
+            if [ -f /usr/include/bpf/vmlinux/vmlinux.h ]; then
+              cp /usr/include/bpf/vmlinux/vmlinux.h bpf/c/vmlinux.h
+            fi
+          fi
 
       - name: Generate BPF
         run: make generate
@@ -38,8 +50,18 @@ jobs:
         with:
           go-version: "1.22"
 
-      - name: Install clang
-        run: sudo apt-get update && sudo apt-get install -y clang llvm
+      - name: Install BPF toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm linux-tools-common linux-tools-$(uname -r) || true
+          if command -v bpftool &>/dev/null && [ -f /sys/kernel/btf/vmlinux ]; then
+            bpftool btf dump file /sys/kernel/btf/vmlinux format c > bpf/c/vmlinux.h
+          else
+            sudo apt-get install -y libbpf-dev || true
+            if [ -f /usr/include/bpf/vmlinux/vmlinux.h ]; then
+              cp /usr/include/bpf/vmlinux/vmlinux.h bpf/c/vmlinux.h
+            fi
+          fi
 
       - name: Generate BPF
         run: make generate
@@ -58,8 +80,18 @@ jobs:
         with:
           go-version: "1.22"
 
-      - name: Install clang
-        run: sudo apt-get update && sudo apt-get install -y clang llvm
+      - name: Install BPF toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm linux-tools-common linux-tools-$(uname -r) || true
+          if command -v bpftool &>/dev/null && [ -f /sys/kernel/btf/vmlinux ]; then
+            bpftool btf dump file /sys/kernel/btf/vmlinux format c > bpf/c/vmlinux.h
+          else
+            sudo apt-get install -y libbpf-dev || true
+            if [ -f /usr/include/bpf/vmlinux/vmlinux.h ]; then
+              cp /usr/include/bpf/vmlinux/vmlinux.h bpf/c/vmlinux.h
+            fi
+          fi
 
       - name: Generate BPF
         run: make generate
