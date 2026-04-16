@@ -147,6 +147,44 @@ func (m *Manager) AttachTCXEgress(h *Handle, progName string, ifindex int) error
 	return m.attachTCX(h, progName, ifindex, ebpf.AttachTCXEgress, "egress")
 }
 
+// AttachTCXInNs attaches TCX ingress+egress inside the given network
+// namespace. The caller provides an entry function (typically
+// netns.Enter) that runs the supplied callback on a locked OS thread
+// inside the target namespace. The ifindex is resolved inside that ns.
+//
+// This indirection keeps the loader package free of a direct dependency
+// on internal/netns.
+func (m *Manager) AttachTCXInNs(
+	h *Handle,
+	ingressProg, egressProg string,
+	nsLabel string,
+	enter func(func() error) error,
+	resolveIfindex func() (int, error),
+) error {
+	var (
+		ifidx int
+		err   error
+	)
+	err = enter(func() error {
+		ifidx, err = resolveIfindex()
+		if err != nil {
+			return fmt.Errorf("loader.AttachTCXInNs: resolve ifindex in %s: %w", nsLabel, err)
+		}
+		if err := m.attachTCX(h, ingressProg, ifidx, ebpf.AttachTCXIngress, "ingress"); err != nil {
+			return err
+		}
+		if err := m.attachTCX(h, egressProg, ifidx, ebpf.AttachTCXEgress, "egress"); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("loader.AttachTCXInNs: netns=%s: %w", nsLabel, err)
+	}
+	m.logger.Info("TCX attached in netns", "handle", h.ID, "ns", nsLabel, "ifindex", ifidx)
+	return nil
+}
+
 func (m *Manager) attachTCX(h *Handle, progName string, ifindex int, attachType ebpf.AttachType, direction string) error {
 	prog := h.Collection.Programs[progName]
 	if prog == nil {

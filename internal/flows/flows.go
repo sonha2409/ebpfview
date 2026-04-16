@@ -42,6 +42,16 @@ type FlowValue struct {
 	_         uint32 // pad to match C struct
 }
 
+// RTTSample mirrors the BPF struct rtt_sample written by the
+// fentry/tcp_rcv_established probe. srtt_us and mdev_us are already
+// shifted to real microsecond values in the BPF program.
+type RTTSample struct {
+	SRTTUs   uint32
+	MDevUs   uint32
+	TSLastNs uint64
+	Samples  uint64
+}
+
 // FlowRecord is the enriched, human-friendly representation of a flow
 // with computed rate fields. Produced by the Aggregator.
 type FlowRecord struct {
@@ -57,13 +67,17 @@ type FlowRecord struct {
 	FirstSeen     time.Time
 	LastSeen      time.Time
 	TCPFlags      uint32
+	// RTT fields — zero if no sample available (non-TCP, or fentry probe
+	// unavailable). SRTT is the kernel's smoothed RTT estimate.
+	SRTTUs uint32
+	MDevUs uint32
 }
 
-// flowKeySize is the exact byte size of FlowKey as seen by BPF.
-const flowKeySize = int(unsafe.Sizeof(FlowKey{}))
+// FlowKeySize is the exact byte size of FlowKey as seen by BPF.
+const FlowKeySize = int(unsafe.Sizeof(FlowKey{}))
 
-// flowValueSize is the exact byte size of FlowValue as seen by BPF.
-const flowValueSize = int(unsafe.Sizeof(FlowValue{}))
+// FlowValueSize is the exact byte size of FlowValue as seen by BPF.
+const FlowValueSize = int(unsafe.Sizeof(FlowValue{}))
 
 // SrcAddr returns the source address from the flow key as a netip.Addr.
 func (k *FlowKey) SrcAddr() netip.Addr {
@@ -99,6 +113,18 @@ func ProtoName(proto uint8) string {
 	default:
 		return fmt.Sprintf("%d", proto)
 	}
+}
+
+// FormatRTT renders a microsecond RTT as a human-readable string. Returns
+// "-" when the sample is zero (no RTT data available).
+func FormatRTT(srttUs uint32) string {
+	if srttUs == 0 {
+		return "-"
+	}
+	if srttUs < 1000 {
+		return fmt.Sprintf("%dµs", srttUs)
+	}
+	return fmt.Sprintf("%.2fms", float64(srttUs)/1000.0)
 }
 
 // FormatBytes formats a byte count as a human-readable string with units.

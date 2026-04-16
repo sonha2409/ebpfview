@@ -14,8 +14,13 @@ import (
 // Aggregator periodically reads the BPF flow_table map, computes
 // per-second rates by diffing against the previous snapshot, and
 // emits []FlowRecord batches on its output channel.
+//
+// If rttMap is non-nil, each flow record is joined with the matching
+// RTT sample (checking both forward and reverse 5-tuples since the
+// fentry probe keys on the socket's local→peer orientation).
 type Aggregator struct {
 	flowMap  *ebpf.Map
+	rttMap   *ebpf.Map
 	interval time.Duration
 	prev     map[FlowKey]FlowValue
 	prevTime time.Time
@@ -24,9 +29,11 @@ type Aggregator struct {
 }
 
 // NewAggregator creates an Aggregator that polls flowMap at the given interval.
-func NewAggregator(flowMap *ebpf.Map, features *feature.Features, interval time.Duration, logger *slog.Logger) *Aggregator {
+// rttMap may be nil — when provided, RTT samples are joined into each record.
+func NewAggregator(flowMap, rttMap *ebpf.Map, features *feature.Features, interval time.Duration, logger *slog.Logger) *Aggregator {
 	return &Aggregator{
 		flowMap:  flowMap,
+		rttMap:   rttMap,
 		interval: interval,
 		prev:     make(map[FlowKey]FlowValue),
 		features: features,
@@ -72,6 +79,13 @@ func (a *Aggregator) poll() ([]FlowRecord, error) {
 		return nil, fmt.Errorf("flows.poll: %w", err)
 	}
 
+	rtt, err := a.readRTTMap()
+	if err != nil {
+		// RTT is best-effort — log and continue without it.
+		a.log.Debug("rtt map read failed", "error", err)
+		rtt = nil
+	}
+
 	var elapsed time.Duration
 	if !a.prevTime.IsZero() {
 		elapsed = now.Sub(a.prevTime)
@@ -80,14 +94,37 @@ func (a *Aggregator) poll() ([]FlowRecord, error) {
 	records := make([]FlowRecord, 0, len(current))
 	for key, val := range current {
 		rec := FlowRecord{
-			SrcAddr:   key.SrcAddr(),
-			DstAddr:   key.DstAddr(),
-			SrcPort:   key.SrcPort(),
-			DstPort:   key.DstPort(),
-			Proto:     key.Proto,
-			Packets:   val.Packets,
-			Bytes:     val.Bytes,
-			TCPFlags:  val.TCPFlags,
+			SrcAddr:  key.SrcAddr(),
+			DstAddr:  key.DstAddr(),
+			SrcPort:  key.SrcPort(),
+			DstPort:  key.DstPort(),
+			Proto:    key.Proto,
+			Packets:  val.Packets,
+			Bytes:    val.Bytes,
+			TCPFlags: val.TCPFlags,
+		}
+
+		// Join RTT — the fentry probe stores under the socket's local→peer
+		// orientation, which may match either direction of the TC-observed
+		// flow. Try forward first, then swap.
+		if rtt != nil && key.Proto == 6 {
+			if sample, ok := rtt[key]; ok {
+				rec.SRTTUs = sample.SRTTUs
+				rec.MDevUs = sample.MDevUs
+			} else {
+				reverse := FlowKey{
+					Family: key.Family,
+					Proto:  key.Proto,
+					SPort:  key.DPort,
+					DPort:  key.SPort,
+					SAddr:  key.DAddr,
+					DAddr:  key.SAddr,
+				}
+				if sample, ok := rtt[reverse]; ok {
+					rec.SRTTUs = sample.SRTTUs
+					rec.MDevUs = sample.MDevUs
+				}
+			}
 		}
 
 		// Compute rates from delta if we have a previous snapshot.
@@ -146,6 +183,26 @@ func (a *Aggregator) readMapBatch() (map[FlowKey]FlowValue, error) {
 		}
 	}
 
+	return result, nil
+}
+
+// readRTTMap reads all entries from the rtt_samples map. Returns nil
+// when no map is configured. Iteration is sufficient here since the
+// map is expected to be small relative to the flow table.
+func (a *Aggregator) readRTTMap() (map[FlowKey]RTTSample, error) {
+	if a.rttMap == nil {
+		return nil, nil
+	}
+	result := make(map[FlowKey]RTTSample)
+	var key FlowKey
+	var val RTTSample
+	iter := a.rttMap.Iterate()
+	for iter.Next(&key, &val) {
+		result[key] = val
+	}
+	if err := iter.Err(); err != nil {
+		return result, fmt.Errorf("flows.readRTTMap: %w", err)
+	}
 	return result, nil
 }
 
