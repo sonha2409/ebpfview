@@ -40,17 +40,7 @@ to target applications.`,
 }
 
 // newFlowsCmd is defined in flows_run.go (linux) or flows_stub.go (other).
-
-func newTraceCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "trace",
-		Short: "Trace syscalls and kernel events",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("ebpfview trace: not yet implemented")
-			return nil
-		},
-	}
-}
+// newTraceCmd is defined in trace_run.go (linux) or trace_stub.go (other).
 
 func newTopCmd() *cobra.Command {
 	return &cobra.Command{

@@ -79,6 +79,35 @@ func (m *Manager) AttachTracepoint(h *Handle, progName, group, name string) erro
 	return nil
 }
 
+// AttachRawTracepoint attaches a BPF program to a raw kernel tracepoint.
+// name is the bare tracepoint name (e.g., "sys_enter", "sys_exit").
+// Raw tracepoints receive the unprocessed trace arguments and are
+// available on kernel 4.17+.
+func (m *Manager) AttachRawTracepoint(h *Handle, progName, name string) error {
+	prog := h.Collection.Programs[progName]
+	if prog == nil {
+		return fmt.Errorf("loader.AttachRawTracepoint: %w: %s", ErrProgNotFound, progName)
+	}
+
+	rtp, err := link.AttachRawTracepoint(link.RawTracepointOptions{
+		Name:    name,
+		Program: prog,
+	})
+	if err != nil {
+		h.Status = StatusError
+		h.Error = err
+		return fmt.Errorf("loader.AttachRawTracepoint: attach to %s: %w", name, err)
+	}
+
+	m.mu.Lock()
+	h.Links = append(h.Links, rtp)
+	h.Status = StatusAttached
+	m.mu.Unlock()
+
+	m.logger.Info("raw tracepoint attached", "handle", h.ID, "program", progName, "name", name)
+	return nil
+}
+
 // AttachXDP attaches an XDP program to the given network interface.
 func (m *Manager) AttachXDP(h *Handle, progName string, ifindex int) error {
 	prog := h.Collection.Programs[progName]
