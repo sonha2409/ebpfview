@@ -58,6 +58,23 @@ struct {
 	__uint(max_entries, 65536);
 } flow_table SEC(".maps");
 
+// RTT sample for a TCP flow, keyed by the same 5-tuple. Populated by an
+// fentry probe on tcp_rcv_established which reads tcp_sock->srtt_us via CO-RE.
+// srtt_us is kernel-smoothed RTT (already EWMA-filtered, stored as (srtt<<3)).
+struct rtt_sample {
+	__u32 srtt_us;       // smoothed RTT in microseconds (shifted down from srtt_us>>3)
+	__u32 mdev_us;       // mean deviation in microseconds
+	__u64 ts_last_ns;    // bpf_ktime_get_ns when sample was taken
+	__u64 samples;       // number of updates observed
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__type(key, struct flow_key);
+	__type(value, struct rtt_sample);
+	__uint(max_entries, 65536);
+} rtt_samples SEC(".maps");
+
 // --- Packet parsing helpers ---
 
 // Parse TCP/UDP ports from L4 header. Returns 0 on success, -1 if
@@ -209,6 +226,86 @@ SEC("classifier/egress")
 int flows_egress(struct __sk_buff *skb)
 {
 	return process_packet(skb);
+}
+
+// --- RTT estimation via fentry/tcp_rcv_established ---
+//
+// tcp_rcv_established runs for every established-state TCP segment received,
+// after the kernel has updated srtt_us on the tcp_sock. We read the smoothed
+// RTT and stash it keyed by the 5-tuple. Keying matches the TCX egress
+// direction (local-as-source, peer-as-dest); the userspace aggregator
+// consults both directions of a flow when joining.
+//
+// We key on local→peer so both ingress and egress flow entries for the same
+// socket can be joined by swapping src/dst in userspace.
+
+static __always_inline void record_rtt(struct sock *sk)
+{
+	struct flow_key key = {};
+	__u16 family;
+	__u16 dport_be;
+	__u16 sport_he;
+
+	// Read address family from sock_common.
+	BPF_CORE_READ_INTO(&family, sk, __sk_common.skc_family);
+	key.proto = IPPROTO_TCP;
+
+	// Ports: skc_num is local port in host order; skc_dport is peer port in
+	// network order.
+	BPF_CORE_READ_INTO(&sport_he, sk, __sk_common.skc_num);
+	BPF_CORE_READ_INTO(&dport_be, sk, __sk_common.skc_dport);
+	key.sport = bpf_htons(sport_he);
+	key.dport = dport_be;
+
+	if (family == AF_INET) {
+		key.family = AF_INET;
+		__u32 saddr4, daddr4;
+		BPF_CORE_READ_INTO(&saddr4, sk, __sk_common.skc_rcv_saddr);
+		BPF_CORE_READ_INTO(&daddr4, sk, __sk_common.skc_daddr);
+		__builtin_memcpy(key.saddr, &saddr4, 4);
+		__builtin_memcpy(key.daddr, &daddr4, 4);
+	} else if (family == AF_INET6) {
+		key.family = AF_INET6;
+		BPF_CORE_READ_INTO(&key.saddr, sk, __sk_common.skc_v6_rcv_saddr.in6_u.u6_addr8);
+		BPF_CORE_READ_INTO(&key.daddr, sk, __sk_common.skc_v6_daddr.in6_u.u6_addr8);
+	} else {
+		return;
+	}
+
+	// tcp_sock inherits from inet_connection_sock which inherits from sock.
+	// srtt_us is stored as (actual_srtt_us << 3) per the kernel; shift back.
+	struct tcp_sock *tp = (struct tcp_sock *)sk;
+	__u32 srtt = 0, mdev = 0;
+	BPF_CORE_READ_INTO(&srtt, tp, srtt_us);
+	BPF_CORE_READ_INTO(&mdev, tp, mdev_us);
+	if (srtt == 0)
+		return;
+	srtt >>= 3;
+	mdev >>= 2;
+
+	__u64 now = bpf_ktime_get_ns();
+	struct rtt_sample *existing = bpf_map_lookup_elem(&rtt_samples, &key);
+	if (existing) {
+		existing->srtt_us = srtt;
+		existing->mdev_us = mdev;
+		existing->ts_last_ns = now;
+		__sync_fetch_and_add(&existing->samples, 1);
+	} else {
+		struct rtt_sample s = {
+			.srtt_us = srtt,
+			.mdev_us = mdev,
+			.ts_last_ns = now,
+			.samples = 1,
+		};
+		bpf_map_update_elem(&rtt_samples, &key, &s, BPF_NOEXIST);
+	}
+}
+
+SEC("fentry/tcp_rcv_established")
+int BPF_PROG(flows_rtt_v4, struct sock *sk)
+{
+	record_rtt(sk);
+	return 0;
 }
 
 LICENSE_DEF;

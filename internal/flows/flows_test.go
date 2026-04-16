@@ -105,6 +105,25 @@ func Test_FormatAddr_IPv6(t *testing.T) {
 	}
 }
 
+func Test_FormatRTT(t *testing.T) {
+	tests := []struct {
+		us   uint32
+		want string
+	}{
+		{0, "-"},
+		{42, "42µs"},
+		{999, "999µs"},
+		{1000, "1.00ms"},
+		{12345, "12.35ms"},
+	}
+	for _, tt := range tests {
+		got := FormatRTT(tt.us)
+		if got != tt.want {
+			t.Errorf("FormatRTT(%d) = %q, want %q", tt.us, got, tt.want)
+		}
+	}
+}
+
 func Test_FormatAddr_Invalid(t *testing.T) {
 	got := FormatAddr(netip.Addr{}, 0)
 	if got != "?" {
