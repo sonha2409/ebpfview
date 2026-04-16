@@ -17,30 +17,8 @@ jobs:
         with:
           go-version: "1.22"
 
-      - name: Install BPF toolchain and generate vmlinux.h
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm
-          # Try bpftool from linux-tools; the wrapper may fail on newer kernels.
-          sudo apt-get install -y linux-tools-common linux-tools-$(uname -r) 2>/dev/null || true
-          # Attempt bpftool dump — guard with || true since the wrapper can exit 2.
-          if [ -f /sys/kernel/btf/vmlinux ]; then
-            bpftool btf dump file /sys/kernel/btf/vmlinux format c > bpf/c/vmlinux.h 2>/dev/null || true
-          fi
-          # If bpftool failed or wasn't available, generate via pahole + /sys/kernel/btf/vmlinux.
-          if [ ! -s bpf/c/vmlinux.h ] && [ -f /sys/kernel/btf/vmlinux ]; then
-            sudo apt-get install -y dwarves 2>/dev/null || true
-            # pahole can also dump BTF to C header
-            pahole --btf_encode_detached /dev/stdout /sys/kernel/btf/vmlinux 2>/dev/null | true
-            # Last resort: use python to read raw BTF and produce a minimal header.
-            # For now, download a known-good vmlinux.h from the libbpf bootstrap.
-            curl -fsSL "https://raw.githubusercontent.com/libbpf/libbpf-bootstrap/master/vmlinux/vmlinux_608.h" \
-              -o bpf/c/vmlinux.h 2>/dev/null || true
-          fi
-          if [ ! -s bpf/c/vmlinux.h ]; then
-            echo "::error::Failed to produce vmlinux.h"
-            exit 1
-          fi
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang llvm
 
       - name: Generate BPF
         run: make generate
@@ -60,22 +38,8 @@ jobs:
         with:
           go-version: "1.22"
 
-      - name: Install BPF toolchain and generate vmlinux.h
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm
-          sudo apt-get install -y linux-tools-common linux-tools-$(uname -r) 2>/dev/null || true
-          if [ -f /sys/kernel/btf/vmlinux ]; then
-            bpftool btf dump file /sys/kernel/btf/vmlinux format c > bpf/c/vmlinux.h 2>/dev/null || true
-          fi
-          if [ ! -s bpf/c/vmlinux.h ] && [ -f /sys/kernel/btf/vmlinux ]; then
-            curl -fsSL "https://raw.githubusercontent.com/libbpf/libbpf-bootstrap/master/vmlinux/vmlinux_608.h" \
-              -o bpf/c/vmlinux.h 2>/dev/null || true
-          fi
-          if [ ! -s bpf/c/vmlinux.h ]; then
-            echo "::error::Failed to produce vmlinux.h"
-            exit 1
-          fi
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang llvm
 
       - name: Generate BPF
         run: make generate
@@ -94,22 +58,8 @@ jobs:
         with:
           go-version: "1.22"
 
-      - name: Install BPF toolchain and generate vmlinux.h
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm
-          sudo apt-get install -y linux-tools-common linux-tools-$(uname -r) 2>/dev/null || true
-          if [ -f /sys/kernel/btf/vmlinux ]; then
-            bpftool btf dump file /sys/kernel/btf/vmlinux format c > bpf/c/vmlinux.h 2>/dev/null || true
-          fi
-          if [ ! -s bpf/c/vmlinux.h ] && [ -f /sys/kernel/btf/vmlinux ]; then
-            curl -fsSL "https://raw.githubusercontent.com/libbpf/libbpf-bootstrap/master/vmlinux/vmlinux_608.h" \
-              -o bpf/c/vmlinux.h 2>/dev/null || true
-          fi
-          if [ ! -s bpf/c/vmlinux.h ]; then
-            echo "::error::Failed to produce vmlinux.h"
-            exit 1
-          fi
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang llvm
 
       - name: Generate BPF
         run: make generate

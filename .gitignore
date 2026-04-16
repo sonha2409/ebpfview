@@ -17,9 +17,6 @@ bpf/*_bpfeb.go
 bpf/*_bpfel.o
 bpf/*_bpfeb.o
 
-# vmlinux.h (generated from running kernel — symlinked into bpf/c/ on Linux dev VMs)
-bpf/c/vmlinux.h
-
 # Go
 *.exe
 *.test
