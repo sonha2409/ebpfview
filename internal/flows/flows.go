@@ -73,11 +73,11 @@ type FlowRecord struct {
 	MDevUs uint32
 }
 
-// flowKeySize is the exact byte size of FlowKey as seen by BPF.
-const flowKeySize = int(unsafe.Sizeof(FlowKey{}))
+// FlowKeySize is the exact byte size of FlowKey as seen by BPF.
+const FlowKeySize = int(unsafe.Sizeof(FlowKey{}))
 
-// flowValueSize is the exact byte size of FlowValue as seen by BPF.
-const flowValueSize = int(unsafe.Sizeof(FlowValue{}))
+// FlowValueSize is the exact byte size of FlowValue as seen by BPF.
+const FlowValueSize = int(unsafe.Sizeof(FlowValue{}))
 
 // SrcAddr returns the source address from the flow key as a netip.Addr.
 func (k *FlowKey) SrcAddr() netip.Addr {

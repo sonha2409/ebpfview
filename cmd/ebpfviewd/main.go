@@ -11,8 +11,9 @@ var version = "dev"
 
 func newRootCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "ebpfviewd",
-		Short: "ebpfview daemon — privileged BPF program manager",
+		Use:     "ebpfviewd",
+		Short:   "ebpfview daemon — privileged BPF program manager",
+		Version: version,
 		Long: `ebpfviewd runs as a privileged daemon that manages BPF program
 lifecycle and exposes data to unprivileged ebpfview CLI clients
 over a Unix domain socket.`,
