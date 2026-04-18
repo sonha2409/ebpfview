@@ -1,6 +1,8 @@
 package loader
 
 import (
+	"io"
+
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 )
@@ -44,12 +46,13 @@ type Handle struct {
 	Name       string // human-readable, e.g. "hello", "flows"
 	Collection *ebpf.Collection
 	Links      []link.Link
+	Closers    []io.Closer // non-link resources (e.g. perf event fds)
 	Maps       map[string]*ebpf.Map
 	Status     Status
 	Error      error // last error if StatusError
 }
 
-// Close releases all resources held by this handle: links, then collection.
+// Close releases all resources held by this handle: links, closers, then collection.
 func (h *Handle) Close() error {
 	var firstErr error
 
@@ -62,6 +65,16 @@ func (h *Handle) Close() error {
 		}
 	}
 	h.Links = nil
+
+	for _, c := range h.Closers {
+		if c == nil {
+			continue
+		}
+		if err := c.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	h.Closers = nil
 
 	if h.Collection != nil {
 		h.Collection.Close()
