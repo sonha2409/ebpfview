@@ -70,8 +70,9 @@ int cpu_sample(struct bpf_perf_event_data *ctx)
 
 	// Discriminate user vs kernel by checking bit 63 of the interrupted IP.
 	// On x86_64 and arm64, kernel addresses have the high bit set.
-	__u64 ip = 0;
-	bpf_probe_read_kernel(&ip, sizeof(ip), &ctx->regs.ip);
+	// PT_REGS_IP_CORE picks the right pt_regs field per arch (ip on x86_64,
+	// pc on arm64) and uses CO-RE relocation for kernel-version safety.
+	__u64 ip = PT_REGS_IP_CORE(&ctx->regs);
 	if (ip >> 63)
 		__sync_fetch_and_add(&val->kern_ns, ctx->sample_period);
 	else
