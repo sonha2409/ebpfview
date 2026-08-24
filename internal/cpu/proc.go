@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // commReader resolves PIDs to process names via <root>/<pid>/comm and
@@ -34,12 +35,39 @@ func (c *commReader) comm(pid uint32) string {
 		}
 		return fmt.Sprintf("pid_%d", pid)
 	}
-	name := strings.TrimSpace(string(raw))
+	name := sanitizeComm(strings.TrimSpace(string(raw)))
 	if name == "" {
 		name = fmt.Sprintf("pid_%d", pid)
 	}
 	c.cache[pid] = name
 	return name
+}
+
+// maxCommLen bounds sanitized names. The kernel caps comm at 15 bytes
+// (TASK_COMM_LEN - 1); anything longer means the data source is not a
+// real procfs and gets truncated rather than trusted.
+const maxCommLen = 16
+
+// sanitizeComm neutralizes untrusted process names before they reach a
+// terminal or UI. A process picks its own comm via prctl(PR_SET_NAME)
+// and can embed ANSI escape sequences or other control bytes, so every
+// control character, DEL, and invalid UTF-8 byte is replaced with '?'.
+func sanitizeComm(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	n := 0
+	for _, r := range s {
+		if n == maxCommLen {
+			break
+		}
+		if r < 0x20 || r == 0x7f || r == utf8.RuneError {
+			b.WriteByte('?')
+		} else {
+			b.WriteRune(r)
+		}
+		n++
+	}
+	return b.String()
 }
 
 // alive reports whether pid still has a directory under root.
