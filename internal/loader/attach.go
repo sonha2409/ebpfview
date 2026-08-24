@@ -240,6 +240,33 @@ func (m *Manager) attachTCX(h *Handle, progName string, ifindex int, attachType 
 	return nil
 }
 
+// AttachBTFTracepoint attaches a BPF program to a BTF-enabled tracepoint
+// (tp_btf). The program's section name (e.g. "tp_btf/sched_switch")
+// already encodes the target tracepoint.
+func (m *Manager) AttachBTFTracepoint(h *Handle, progName string) error {
+	prog := h.Collection.Programs[progName]
+	if prog == nil {
+		return fmt.Errorf("loader.AttachBTFTracepoint: %w: %s", ErrProgNotFound, progName)
+	}
+
+	l, err := link.AttachTracing(link.TracingOptions{
+		Program: prog,
+	})
+	if err != nil {
+		h.Status = StatusError
+		h.Error = err
+		return fmt.Errorf("loader.AttachBTFTracepoint: %w", err)
+	}
+
+	m.mu.Lock()
+	h.Links = append(h.Links, l)
+	h.Status = StatusAttached
+	m.mu.Unlock()
+
+	m.logger.Info("BTF tracepoint attached", "handle", h.ID, "program", progName)
+	return nil
+}
+
 // Detach closes all links for the given handle, but keeps the collection
 // loaded (programs and maps remain accessible for reads).
 func (m *Manager) Detach(id HandleID) error {
@@ -264,9 +291,18 @@ func (m *Manager) Detach(id HandleID) error {
 			firstErr = fmt.Errorf("loader.Detach: %w", err)
 		}
 	}
+	for _, c := range h.Closers {
+		if c == nil {
+			continue
+		}
+		if err := c.Close(); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("loader.Detach: %w", err)
+		}
+	}
 
 	m.mu.Lock()
 	h.Links = nil
+	h.Closers = nil
 	h.Status = StatusDetached
 	m.mu.Unlock()
 
