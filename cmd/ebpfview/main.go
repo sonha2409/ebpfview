@@ -41,17 +41,7 @@ to target applications.`,
 
 // newFlowsCmd is defined in flows_run.go (linux) or flows_stub.go (other).
 // newTraceCmd is defined in trace_run.go (linux) or trace_stub.go (other).
-
-func newTopCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "top",
-		Short: "Live process-level resource usage",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("ebpfview top: not yet implemented")
-			return nil
-		},
-	}
-}
+// newTopCmd is defined in top_run.go (linux) or top_stub.go (other).
 
 func newFlamegraphCmd() *cobra.Command {
 	return &cobra.Command{
