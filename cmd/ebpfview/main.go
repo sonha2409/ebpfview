@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/sonhathai/ebpfview/internal/tui"
 )
 
 var (
@@ -22,6 +24,9 @@ real-time network flows, syscall latency heatmaps, per-process CPU
 flamegraph data, and userspace function traces — with zero changes
 to target applications.`,
 		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return tui.Run(cmd.Context(), tui.DefaultTabs())
+		},
 	}
 
 	root.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default $HOME/.ebpfview.toml)")
